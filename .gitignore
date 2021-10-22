@@ -1,3 +1,4 @@
 .idea
 *.pyc
 notebooks/.ipynb_checkpoints
+*.egg-info
