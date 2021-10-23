@@ -5,7 +5,19 @@ import torch
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-class TestTrainer(TestCase):
-    def test_run(self):
-        exp = Exp(config=sample_conf, repeat_num=1, seed=1)
+class TestExp(TestCase):
+    def test_mmoe(self):
+        sample_conf.model = 'mmoe'
+        exp = Exp(config=sample_conf, repeat_num=3, seed=1)
         exp.run()
+
+    def test_moe(self):
+        sample_conf.model = 'moe'
+        exp = Exp(config=sample_conf, repeat_num=3, seed=1)
+        exp.run()
+
+    def test_shared_bottom(self):
+        sample_conf.model = 'shared_bottom'
+        exp = Exp(config=sample_conf, repeat_num=3, seed=1)
+        exp.run()
+

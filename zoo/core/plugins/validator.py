@@ -1,31 +1,43 @@
 from .plugin import Plugin
 import torch
+from torch.utils.data import DataLoader
 
 
 class Validator(Plugin):
-    def __init__(self, val_dataset, test_dataset=None):
-        super().__init__([('after_epoch', 1)])
-        self.val_dataset = val_dataset
-        self.test_dataset = test_dataset
+    def __init__(self,
+                 val_dataloader: DataLoader,
+                 test_dataloader: DataLoader = None,
+                 trigger_intervals = None,
+                 first_trigger_time = None
+                 ):
+        super().__init__(trigger_intervals, first_trigger_time)
+        self.val_loader = val_dataloader
+        self.test_loader = test_dataloader
 
     def register(self, trainer):
         self.trainer = trainer
-        val_stats = self.trainer.stats_epochwise.setdefault('validation_loss', {})
-        val_stats['log_epoch_fields'] = ['{last:.4f}']
-
-        if self.test_dataset:
-            test_stats = self.trainer.stats_epochwise.setdefault('test_loss', {})
-            test_stats['log_epoch_fields'] = ['{last:.4f}']
 
     def after_epoch(self):
         self.trainer.model.eval()
 
-        val_stats = self.trainer.stats_epochwise.get('validation_loss')
-        val_stats['last'] = self._evaluate_loss(self.val_dataset)
+        val_stats = self.trainer.stats_epochwise['validation_loss']
+        val_stats.append((self.trainer.epoch, self._evaluate_loss(self.val_loader)))
 
-        if self.test_dataset:
-            test_stats = self.trainer.stats_epochwise.get('test_loss')
-            test_stats['last'] = self._evaluate_loss(self.test_dataset)
+        if self.test_loader:
+            test_stats = self.trainer.stats_epochwise['test_loss']
+            test_stats.append((self.trainer.epoch, self._evaluate_loss(self.test_loader)))
+
+        self.trainer.model.train()
+
+    def after_step(self, *args, **kwargs):
+        self.trainer.model.eval()
+
+        val_stats = self.trainer.stats_stepwise['validation_loss']
+        val_stats.append((self.trainer.step, self._evaluate_loss(self.val_loader)))
+
+        if self.test_loader:
+            test_stats = self.trainer.stats_stepwise['test_loss']
+            test_stats.append((self.trainer.step, self._evaluate_loss(self.test_loader)))
 
         self.trainer.model.train()
 
@@ -45,4 +57,5 @@ class Validator(Plugin):
                 n_examples += batch_size
 
             self.trainer.criterion.reduction = 'mean'
-            return loss_sum / n_examples
+            ret = loss_sum / n_examples
+            return ret.data.item()

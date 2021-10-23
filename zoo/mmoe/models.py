@@ -8,23 +8,23 @@ Modules
 
 
 class MMoERegressor(torch.nn.Module):
-    def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower):
+    def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MMoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
         for _ in range(num_expert):
             expert_net = torch.nn.Sequential(
-                torch.nn.Linear(dim_in, dim_hidden_bottom), torch.nn.ReLU()
+                torch.nn.Linear(dim_in, dim_hidden_bottom, bias=False), torch.nn.ReLU()
             )
             self.experts.append(expert_net)
 
         self.gate_transform_layers = torch.nn.ModuleList()
         self.towers = torch.nn.ModuleList()
         for _ in range(num_task):
-            self.gate_transform_layers.append(torch.nn.Linear(dim_in, num_expert))
+            self.gate_transform_layers.append(torch.nn.Linear(dim_in, num_expert, bias=False))
             tower = torch.nn.Sequential(
-                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower),
+                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower, bias=False),
                 torch.nn.ReLU(),
-                torch.nn.Linear(dim_hidden_tower, 1)
+                torch.nn.Linear(dim_hidden_tower, 1, bias=False)
             )
             self.towers.append(tower)
 
@@ -43,22 +43,22 @@ class MMoERegressor(torch.nn.Module):
 
 
 class MoERegressor(torch.nn.Module):
-    def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower):
+    def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
         for _ in range(num_expert):
             expert_net = torch.nn.Sequential(
-                torch.nn.Linear(dim_in, dim_hidden_bottom), torch.nn.ReLU()
+                torch.nn.Linear(dim_in, dim_hidden_bottom, bias=False), torch.nn.ReLU()
             )
             self.experts.append(expert_net)
-        self.gate_transform = torch.nn.Linear(dim_in, num_expert)
+        self.gate_transform = torch.nn.Linear(dim_in, num_expert, bias=False)
 
         self.towers = torch.nn.ModuleList()
         for _ in range(num_task):
             tower = torch.nn.Sequential(
-                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower),
+                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower, bias=False),
                 torch.nn.ReLU(),
-                torch.nn.Linear(dim_hidden_tower, 1)
+                torch.nn.Linear(dim_hidden_tower, 1, bias=False)
             )
             self.towers.append(tower)
 
@@ -74,18 +74,18 @@ class MoERegressor(torch.nn.Module):
 
 
 class VanillaSharedBottomRegressor(torch.nn.Module):
-    def __init__(self, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower):
+    def __init__(self, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(VanillaSharedBottomRegressor, self).__init__()
         self.bottom = torch.nn.Sequential(
-                torch.nn.Linear(dim_in, dim_hidden_bottom), torch.nn.ReLU()
+                torch.nn.Linear(dim_in, dim_hidden_bottom, bias=False), torch.nn.ReLU()
             )
 
         self.towers = torch.nn.ModuleList()
         for _ in range(num_task):
             tower = torch.nn.Sequential(
-                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower),
+                torch.nn.Linear(dim_hidden_bottom, dim_hidden_tower, bias=False),
                 torch.nn.ReLU(),
-                torch.nn.Linear(dim_hidden_tower, 1)
+                torch.nn.Linear(dim_hidden_tower, 1, bias=False)
             )
             self.towers.append(tower)
 
@@ -110,11 +110,3 @@ def exp_mp(model: torch.nn.Module, task_corr, N=10):
             data.append(run_ret)
 
     return pd.DataFrame(data)
-
-
-def run_mp_wrapper(args):
-    """
-    :param args: [model, task_corss, seed]
-    :return:
-    """
-    return run(*args)

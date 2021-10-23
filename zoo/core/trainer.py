@@ -1,8 +1,10 @@
 import heapq
 import torch
-from .event import Event
+from .trigger import Trigger
 from typing import List, Dict, Tuple
 from torch.nn.modules.loss import _Loss
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
 from collections import defaultdict
 
 """
@@ -10,10 +12,12 @@ CodeBase: https://zhuanlan.zhihu.com/p/414843341
 """
 
 class Trainer(object):
-    def __init__(self, model: torch.nn.Module, criterion: _Loss, optimizer, data_loader, use_cuda=False):
-        param_num = sum(param.numel() for param in model.parameters())
-        print(f"{model.__class__.__name__}, with {param_num} parameters")
-
+    def __init__(self,
+                 model: torch.nn.Module,
+                 criterion: _Loss,
+                 optimizer: Optimizer,
+                 data_loader: DataLoader,
+                 use_cuda=False):
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -26,7 +30,7 @@ class Trainer(object):
         self.stats_stepwise: Dict[str, List[Tuple[int, float]]] = defaultdict(list)
         self.stats_epochwise: Dict[str, List[Tuple[int, float]]] = defaultdict(list)
 
-        self.event_queues: Dict[str, List[Event]] = {
+        self.trigger_queues: Dict[str, List[Trigger]] = {
             'before_step': [],
             'after_step': [],
 
@@ -36,33 +40,31 @@ class Trainer(object):
 
     def register_plugin(self, plugin):
         plugin.register(self)
-        intervals = plugin.trigger_interval
 
-        if not isinstance(intervals, list):
-            intervals = [intervals]
+        if plugin.trigger_intervals:
+            for type_, interval in plugin.trigger_intervals.items():
+                t = Trigger(plugin, type_, interval)
+                self.trigger_queues[type_].append(t)
 
-        for event_type, interval in intervals:
-            event = Event(plugin, event_type, interval)
-            self.event_queues[event_type].append(event)
-
-    def call_plugin(self, event_type, time, *args, **kwargs):
-        queue = self.event_queues[event_type]
+    def call_plugin(self, type_, time, *args, **kwargs):
+        queue = self.trigger_queues[type_]
         if len(queue) == 0:
             return
 
         while queue[0].trigger_time <= time:
-            event = queue[0]
-            event.trigger(*args, **kwargs)
-            heapq.heappushpop(queue, event.next())
+            trigger = queue[0]
+            trigger(*args, **kwargs)
+            heapq.heappushpop(queue, trigger.next())
 
     def run(self, num_epoch=10):
-        for q in self.event_queues.values():
+        for q in self.trigger_queues.values():
             heapq.heapify(q)
 
         for i in range(num_epoch):
             self.call_plugin('before_epoch', i)
             self.train()
             self.call_plugin('after_epoch', i)
+            self.epoch += 1
 
     def train(self):
         for x, y in self.data_loader:

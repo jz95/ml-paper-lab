@@ -5,40 +5,11 @@ class Monitor(Plugin):
                  running_average=True,
                  epoch_average=True,
                  smoothing=0.7,
-                 precision=4, unit=''):
-        """
-       :param running_average:
-       :param epoch_average:
-       :param smoothing:
-       :param precision:
-       :param number_format:
-       :param unit:
-       """
-
-        if precision is None:
-            precision = 4
-        if number_format is None:
-            number_format = '.{}f'.format(precision)
-
-        number_format = ':' + number_format
-
-        super(Monitor, self).__init__([('step', 1)])
-
+                 precision=4):
+        super(Monitor, self).__init__({'after_step': 1})
         self.smoothing = smoothing
         self.running_average = running_average
         self.epoch_average = epoch_average
-
-        self.log_format = number_format
-        self.log_unit = unit
-        self.log_epoch_fields = None
-        self.log_iter_fields = ['{last' + number_format + '}' + unit]
-
-        if self.running_average:
-            self.log_iter_fields += ['({running_avg' + number_format + '}' + unit + ')']
-        if self.epoch_average:
-            self.log_epoch_fields = ['{running_avg' + number_format + '}' + unit]
-
-        self.trainer = None
 
     def register(self, trainer):
         self.trainer = trainer

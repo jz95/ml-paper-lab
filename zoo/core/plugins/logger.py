@@ -4,14 +4,13 @@ from collections import defaultdict
 
 
 class Logger(Plugin):
-    def __init__(self, interval=None):
-        super(Logger, self).__init__([('after_step', 100), ('after_epoch', 1)])
+    def __init__(self, trigger_intervals):
+        super(Logger, self).__init__(trigger_intervals)
 
     def register(self, trainer):
         self.trainer = trainer
 
     def after_step(self, *args, **kwargs):
-
         msg = f"[step-{self.trainer.step}]: "
         for k, values in self.trainer.stats_stepwise.items():
             i, val = values[-1]
