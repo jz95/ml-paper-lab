@@ -94,19 +94,3 @@ class VanillaSharedBottomRegressor(torch.nn.Module):
         out = self.bottom(x)
         # [batch_size, num_task]
         return torch.cat([tower(out) for tower in self.towers], dim=-1)
-
-
-def exp_mp(model: torch.nn.Module, task_corr, N=10):
-    """
-    multi-process version exp
-    """
-    import torch.multiprocessing as mp
-    from copy import deepcopy
-
-    with mp.Pool(CONF.NUM_PROCESS) as pool:
-        args = [(deepcopy(model), task_corr, rank) for rank in range(N)]
-        data = []
-        for run_ret in tqdm(pool.imap(run_mp_wrapper, args), total=N):
-            data.append(run_ret)
-
-    return pd.DataFrame(data)

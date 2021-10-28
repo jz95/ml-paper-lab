@@ -27,3 +27,8 @@ class TestTrainer(TestCase):
 
     def test_validator_plugin(self):
         self.trainer.register_plugin()
+
+        
+if __name__ == '__main__':
+    import unitest
+    unitest.main()

@@ -18,7 +18,8 @@ class Trainer(object):
                  optimizer: Optimizer,
                  data_loader: DataLoader,
                  use_cuda=False):
-        self.model = model
+        
+        self.model = model.cuda() if use_cuda else model
         self.criterion = criterion
         self.optimizer = optimizer
         self.data_loader = data_loader

@@ -50,6 +50,7 @@ class Validator(Plugin):
 
                 if self.trainer.use_cuda:
                     labels = labels.cuda()
+                    inputs = inputs.cuda()
 
                 outputs = self.trainer.model(inputs)
                 loss_sum += self.trainer.criterion(outputs, labels)
