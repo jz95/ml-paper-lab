@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
-from zoo.core import ExpRunner, Trainer, Config
-from zoo.core.plugins import Validator, Logger
+from paperlab.core import Config, wrap_data, evaluate_loss
 from .models import MMoERegressor, MoERegressor, VanillaSharedBottomRegressor
 from .data import get_data
 
@@ -32,7 +31,6 @@ conf = {
 
 sample_conf = Config(**conf)
 
-
 def exp(config):
     train_dataset, dev_dataset = get_data(config.train_data_size,
                                           config.dev_data_size,
@@ -44,16 +42,25 @@ def exp(config):
     dev_dataloader = DataLoader(dataset=dev_dataset, batch_size=config.batch_size)
 
     model = model_map[config.model](**config.model_arch.__dict__)
+    if torch.cuda.is_available():
+        model = model.cuda()
+
     optimizer = torch.optim.Adam(params=model.parameters(), lr=config.lr)
-    trainer = Trainer(model, torch.nn.MSELoss(), optimizer, train_dataloader, use_cuda=torch.cuda.is_available())
 
-#     if not has_ran:
-#         has_ran = True
-#         param_num = sum(param.numel() for param in model.parameters())
-#         print(f"{model.__class__.__name__}, with {param_num} parameters")
+    step = 0
+    dev_loss = {}
+    for _ in range(config.num_epoch):
+        for data in train_dataloader:
+            if torch.cuda.is_available():
+                data = wrap_data(data)
 
-    trainer.register_plugin(Validator(val_dataloader=dev_dataloader,
-                                      trigger_intervals={'after_step': config.validate_freq}))
-#         trainer.register_plugin(Logger(trigger_intervals={'after_step': 20000}))
-    trainer.run(config.num_epoch)
-    return trainer.stats_stepwise["validation_loss"]
+            step += 1
+            optimizer.zero_grad()
+            loss = model.compute_loss(data)
+            loss.backward()
+            optimizer.step()
+
+        # evaluate model after each epoch
+        dev_loss[step] = evaluate_loss(model, dev_dataloader)
+
+    return dev_loss

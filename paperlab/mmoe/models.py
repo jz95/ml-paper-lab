@@ -1,13 +1,27 @@
 import torch
 import torch.nn.functional as F
-import pandas as pd
+from paperlab.core import BaseModel
 
 """
 Modules
 """
 
+class Regressor(BaseModel):
+    """
+    a common regression model using MSE as loss
+    """
+    def __init__(self):
+        super(Regressor, self).__init__()
+        self.criterion = torch.nn.MSELoss()
 
-class MMoERegressor(torch.nn.Module):
+    def compute_loss(self, data, reduction='mean') -> torch.Tensor:
+        x, y = data
+        out = self.forward(x)
+        self.criterion.reduction = reduction
+        return self.criterion(out, y)
+
+
+class MMoERegressor(Regressor):
     def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MMoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
@@ -42,7 +56,7 @@ class MMoERegressor(torch.nn.Module):
         return torch.cat([tower(gated_out[:, :, i]) for i, tower in enumerate(self.towers)], dim=-1)
 
 
-class MoERegressor(torch.nn.Module):
+class MoERegressor(Regressor):
     def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
@@ -73,7 +87,7 @@ class MoERegressor(torch.nn.Module):
         return torch.cat([tower(gated_out) for tower in self.towers], dim=-1)
 
 
-class VanillaSharedBottomRegressor(torch.nn.Module):
+class VanillaSharedBottomRegressor(Regressor):
     def __init__(self, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(VanillaSharedBottomRegressor, self).__init__()
         self.bottom = torch.nn.Sequential(
