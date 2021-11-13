@@ -1,7 +1,10 @@
 import torch
 import logging
+
+
 from typing import Dict
 from paperlab.utils import isnotebook
+from paperlab.core.utils import MultiProcessManager
 from collections import Sequence
 
 
@@ -28,7 +31,7 @@ class ExpRunner(object):
         :param seeds:
         """
         if seeds is None:
-            self.seeds = range(repeat_num)
+            self.seeds = list(range(repeat_num))
         elif isinstance(seeds, Sequence):
             self.seeds = list(map(int, seeds))
             assert len(self.seeds) == repeat_num, f'seeds num: {len(self.seeds)} neq repeat_num: {repeat_num}'
@@ -55,6 +58,7 @@ class ExpRunner(object):
         self.clear()
 
         print("experiment starts ...")
+        print(f"repeat running {self.repeat_num} times, random seeds are {self.seeds}")
         print(f"config:")
         for k, v in self.exp_config.items():
             print(f"\t {k} = {v}")
@@ -77,19 +81,21 @@ class ExpRunner(object):
             self.exp_results.append(data)
     
     def run_mp(self, num_process=4):
-        """ 
+        """
         multi-process version of run
         """
-        import torch.multiprocessing as mp
-
-        global func_wrapper
+#         global func_wrapper
         
         def func_wrapper(seed):
             torch.random.manual_seed(seed)
             return self.exp_func(**self.exp_config)
 
         self._setup()
-
-        with mp.Pool(num_process) as pool:
-            for run_ret in tqdm(pool.imap(func_wrapper, self.seeds), total=self.repeat_num):
-                self.exp_results.append(run_ret)
+        
+        manager = MultiProcessManager(num_process)
+        for run_ret in tqdm(manager.map(func_wrapper, self.seeds), total=self.repeat_num):
+            self.exp_results.append(run_ret)
+        
+#         with mp.Pool(num_process) as pool:
+#             for run_ret in tqdm(pool.imap(func_wrapper, self.seeds), total=self.repeat_num):
+#                 self.exp_results.append(run_ret)

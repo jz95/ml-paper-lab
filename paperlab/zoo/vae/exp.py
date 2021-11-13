@@ -18,7 +18,7 @@ sample_config = Config(**sample_params)
 MOVING_DECAY = 0.9
 
 
-def exp(config):
+def exp(config, return_model=False):
     model = VAEModel(config.model.dim_latent,
                      config.model.dim_input,
                      config.model.dim_hidden)
@@ -62,4 +62,7 @@ def exp(config):
         test_loss = evaluate_loss(model, test_dataloader)
         test_elbos[step * config.learning.batch_size] = - test_loss
 
-    return model, train_elbos, test_elbos
+    if return_model:
+        return model, train_elbos, test_elbos
+    else:
+        return train_elbos, test_elbos

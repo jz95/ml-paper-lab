@@ -6,6 +6,9 @@ from torch.utils.data import Dataset
 
 
 class SyntheticDataset(Dataset):
+    """
+    generate synthetic data controlled by the task-correlation
+    """
     def __init__(self,
                  size,
                  u1, u2,
@@ -48,6 +51,7 @@ def get_data(train_data_size,
     """
     A = torch.empty(2, dim_in)
     torch.nn.init.orthogonal_(A)
+    # get orthogonal vectors
     u1, u2 = A[0] / torch.sum(torch.square(A[0])), A[1] / torch.sum(torch.square(A[1]))
     alphas, betas = torch.randn(num_sin_params), torch.randn(num_sin_params)
 

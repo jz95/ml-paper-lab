@@ -25,7 +25,7 @@ class VAEModel(BaseModel):
         :return: the estimated ELBO value
         """
         mean, var = self.encoder.get_mean_and_var(x)  # [b, n], [b, n]
-        z = mean + torch.sqrt(var) * torch.randn(var.shape)
+        z = mean + torch.sqrt(var) * torch.randn(var.shape).to(x.device)
         # the KL divergence term plus the MC estimate of decoder
         return 1 / 2 * torch.sum(1 + torch.log(var) - mean ** 2 - var, dim=1) + self.decoder(x, z)
 

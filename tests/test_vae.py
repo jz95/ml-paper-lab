@@ -1,15 +1,21 @@
 from unittest import TestCase
-from paperlab.vae.exp import exp, sample_config
-from paperlab.vae.models import GaussianMLP
+from paperlab.core import ExpRunner
+from paperlab.zoo.vae.exp import exp, sample_config
+from paperlab.zoo.vae.models import GaussianMLP
+
 import torch
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
-class TestTrainer(TestCase):
-    def test_run(self):
+class TestVAE(TestCase):
+    def test_exp(self):
         exp(sample_config)
+    
+    def test_run(self):
+        runner = ExpRunner(exp_func=exp, exp_config={'config': sample_config}, repeat_num=5)
+        runner.run_mp()
 
     def test_gaussian_mlp_inf(self):
         model = GaussianMLP(5, 3, 100)
@@ -37,5 +43,5 @@ class TestTrainer(TestCase):
 
 
 if __name__ == '__main__':
-    import unitest
-    unitest.main()
+    import unittest
+    unittest.main()
