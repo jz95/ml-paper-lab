@@ -6,22 +6,31 @@ from paperlab.core import BaseModel
 Modules
 """
 
-class Regressor(BaseModel):
+class MultiTaskRegressor(BaseModel):
     """
-    a common regression model using MSE as loss
+    a Multi Task regression model using MSE as loss
+
+    let i denotes the index of sample (i=1...n), j denotes the index of each task's output (j=1...m)
+    the loss computation works as follows:
+        loss = \sum_j (\sum_i mse(y_hat_ij, y_true_ij) / n)
     """
     def __init__(self):
-        super(Regressor, self).__init__()
-        self.criterion = torch.nn.MSELoss()
+        super(MultiTaskRegressor, self).__init__()
+        self.criterion = torch.nn.MSELoss(reduction='none')
 
     def compute_loss(self, data, reduction='mean') -> torch.Tensor:
         x, y = data
-        out = self.forward(x)
-        self.criterion.reduction = reduction
-        return self.criterion(out, y)
+        y_hat = self.forward(x)
+        mse = self.criterion(y_hat, y)  # [batch_size, num_task]
+        if reduction == 'mean':
+            return torch.sum(torch.mean(mse, axis=0))
+        elif reduction == 'sum':
+            return torch.sum(mse)
+        else:
+            raise ValueError(f'invalid reduction method {reduction}')
 
 
-class MMoERegressor(Regressor):
+class MMoERegressor(MultiTaskRegressor):
     def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MMoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
@@ -56,7 +65,7 @@ class MMoERegressor(Regressor):
         return torch.cat([tower(gated_out[:, :, i]) for i, tower in enumerate(self.towers)], dim=-1)
 
 
-class MoERegressor(Regressor):
+class MoERegressor(MultiTaskRegressor):
     def __init__(self, num_expert, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(MoERegressor, self).__init__()
         self.experts = torch.nn.ModuleList()
@@ -87,7 +96,7 @@ class MoERegressor(Regressor):
         return torch.cat([tower(gated_out) for tower in self.towers], dim=-1)
 
 
-class VanillaSharedBottomRegressor(Regressor):
+class VanillaSharedBottomRegressor(MultiTaskRegressor):
     def __init__(self, num_task, dim_in, dim_hidden_bottom, dim_hidden_tower, **kwargs):
         super(VanillaSharedBottomRegressor, self).__init__()
         self.bottom = torch.nn.Sequential(

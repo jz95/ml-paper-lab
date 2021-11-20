@@ -83,11 +83,13 @@ def wrap_data(data):
 
 
 def evaluate_loss(model: BaseModel, dataloader: DataLoader):
+    model.eval()
     loss_ = 0.
     with torch.no_grad():
         for data in dataloader:
             if torch.cuda.is_available():
                 data = wrap_data(data)
             loss_ += model.compute_loss(data, reduction='sum').item()
-
+    
+    model.train()
     return loss_ / len(dataloader.dataset)

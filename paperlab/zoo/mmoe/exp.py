@@ -59,8 +59,8 @@ def exp(config):
             loss = model.compute_loss(data)
             loss.backward()
             optimizer.step()
-
-        # evaluate model after each epoch
-        dev_loss[step] = evaluate_loss(model, dev_dataloader)
+            
+            if step % config.validate_freq == 1:
+                dev_loss[step] = evaluate_loss(model, dev_dataloader)
 
     return dev_loss
