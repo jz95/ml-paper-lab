@@ -31,10 +31,10 @@ class TestViT(TestCase):
 
     def test_data(self):
         from paperlab.zoo.vit.data import get_data
-        trainset, _ = get_data()
-        image, label = trainset[10]
-
-        print(image.shape, label)
+        trainset, *_ = get_data('tiny-imagenet-200')
+        image, label = trainset[-1]
+        
+        print(f"train-size: {len(trainset)}, image-shape:{image.shape}, label:{label}")
 
     def test_attn(self):
         _, test_dataset = get_data()

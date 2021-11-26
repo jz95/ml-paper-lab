@@ -219,8 +219,7 @@ class ViTClassifier(BaseModel):
         self.transformer_encoder = VisionTransformer(image_size, patch_size, num_channel, depth, dim, num_head, dim_head, dim_mlp, dropout, emb_dropout)
         self.criterion = nn.CrossEntropyLoss()
         self.pred_layer = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, num_class)
+            nn.Linear(dim, num_class),
         )
         assert pool in ('cls', 'mean'), 'pool type must be either cls (cls token) or mean (mean pooling)'
         self.pool = pool

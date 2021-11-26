@@ -15,6 +15,7 @@ sample_params = {
     'num_channel': 3,
     'pool': 'cls',
     'num_class': 10,
+    'use_dataset': 'tiny-imagenet-200',
 
     'transformer.depth': 4,
     'transformer.dim': 64,
@@ -28,6 +29,8 @@ sample_params = {
     'learning.lr': 1e-3,
     'learning.num_epoch': 4,
     'learning.early_stop_patience': 5,
+    
+    'valdate_freq': 10000
 }
 
 sample_config = Config(**sample_params)
@@ -77,19 +80,21 @@ def train(config):
         model = model.cuda()
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=config.learning.lr)
-    scheduler = torch.optim.lr_scheduler.LinearLR(optimizer=optimizer,
-                                                  start_factor=1.,
-                                                  end_factor=0.1,
-                                                  total_iters=config.learning.num_epoch
-                                                  )
+#     scheduler = torch.optim.lr_scheduler.LinearLR(optimizer=optimizer,
+#                                                   start_factor=1.,
+#                                                   end_factor=0.1,
+#                                                   total_iters=config.learning.num_epoch
+#                                                   )
 
-    train_dataset, dev_dataset = get_data()
+    train_dataset, dev_dataset = get_data(config.use_dataset)
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=config.learning.batch_size,
+                                  num_workers=4,
                                   shuffle=True)
 
     dev_dataloader = DataLoader(dev_dataset,
-                                batch_size=config.learning.batch_size)
+                                batch_size=config.learning.batch_size,
+                                num_workers=4)
 
     step = 0
     moving_avg_loss = 0
@@ -98,6 +103,7 @@ def train(config):
 
     for _ in range(config.learning.num_epoch):
         for data in train_dataloader:
+            print(data[0].shape, data[1].shape, data[0][0])
             data = wrap_data(data) if torch.cuda.is_available() else data
 
             step += 1
@@ -113,31 +119,39 @@ def train(config):
 
             if step % 1000 == 0:
                 print(f"step-{step} training_loss: {moving_avg_loss:.4f}")
+            
+            if step % config.validate_freq == 0:
+                dev_loss = evaluate_loss(model, dev_dataloader)
+                dev_score = evaluate_accuracy(model, dev_dataloader)
 
-        scheduler.step()
-        dev_loss = evaluate_loss(model, dev_dataloader)
-        dev_score = evaluate_accuracy(model, dev_dataloader)
+                print(f"step-{step}: dev_loss: {dev_loss:.4f}, dev_acc: {dev_score:.4f}")
+                if dev_score > best_dev_score + EPS:
+                    best_model_state = deepcopy(model.state_dict())
+                    best_dev_score = dev_score
 
-        print(f"step-{step}: dev_loss: {dev_loss:.4f}, dev_acc: {dev_score:.4f}")
-        if dev_score > best_dev_score + EPS:
-            best_model_state = deepcopy(model.state_dict())
-            best_dev_score = dev_score
+                if dev_loss < best_dev_loss - EPS:
+                    patience_cnt = 0
+                    best_dev_loss = dev_loss
+                else:
+                    patience_cnt += 1
 
-        if dev_loss < best_dev_loss - EPS:
-            patience_cnt = 0
-            best_dev_loss = dev_loss
-        else:
-            patience_cnt += 1
-
-        if patience_cnt >= config.learning.early_stop_patience:
-            print(f"dev_loss doesnt descent in {config.learning.early_stop_patience} epochs, halt the training process.")
-            break
-
+                if patience_cnt >= config.learning.early_stop_patience:
+                    print(f"dev_loss doesnt descent in {config.learning.early_stop_patience} epochs, halt the training process.")
+                    model.load_state_dict(best_model_state)
+                    return model
+    
     model.load_state_dict(best_model_state)
     return model
 
 
 def get_attention_distance(model: ViTClassifier, dataloader: DataLoader) -> torch.Tensor:
+    """
+    compute the mean attention distance as described in Section 4.5 `INSPECTING VISION TRANSFORMER` and  Appendix D.7
+    :param model:
+    :param dataloader:
+    :return: mean attention distance
+                shape: [num_layer, num_head]
+    """
     if torch.cuda.is_available():
         model = model.cuda()
 
@@ -172,7 +186,7 @@ def get_attention_distance(model: ViTClassifier, dataloader: DataLoader) -> torc
     def _pixel_dist_matrix(h, w):
         # the euclid distance between two pixels (h1, w1) and (h2, w2)
         dist = torch.empty(size=(h, w, h, w))
-        xx, yy = torch.meshgrid(torch.arange(h), torch.arange(w), indexing='ij')
+        xx, yy = torch.meshgrid(torch.arange(h), torch.arange(w))
         for x in range(h):
             for y in range(w):
                 # the distance between (x, y) and all other pixels, shape: [h, w]
@@ -180,13 +194,15 @@ def get_attention_distance(model: ViTClassifier, dataloader: DataLoader) -> torc
                 dist[x, y] = d
 
         return dist
-    pixel_distance = _pixel_dist_matrix(height, width)
+    pixel_distance = _pixel_dist_matrix(height, width).to(attn_maps[0].device)
 
-    mean_attention_distance = torch.empty((num_layer, num_head))
+    mean_attention_distance = torch.empty((num_layer, num_head), device=attn_maps[0].device)
     for i in range(num_layer):
         for j in range(num_head):
+            # normalize attention value after removing [cls] token
+            normalized_attn = attn_maps[i][:, j, 1:, 1:] / torch.sum(attn_maps[i][:, j, 1:, 1:], dim=-1, keepdim=True)
             # the attention pixel (h1, w1) attended to (h2, w2), shape: [data_size, height, width, height, width]
-            head_attn_pixel = einops.repeat(attn_maps[i][:, j, 1:, 1:],
+            head_attn_pixel = einops.repeat(normalized_attn / (ph * pw),
                                             'b (nhx nwx) (nhy nwy) -> b (nhx phx) (nwx pwx) (nhy phy) (nwy pwy)',
                                              nhx=nh, nwx=nw, nhy=nh, nwy=nw,
                                              phx=ph, pwx=pw, phy=ph, pwy=pw)
@@ -199,12 +215,16 @@ def get_attention_distance(model: ViTClassifier, dataloader: DataLoader) -> torc
 
 def get_attention_maps(model: ViTClassifier, dataloader: DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    get the attention maps over the images in the dataloader
+    get the attention maps (i.e. the attention on other token queried by the [CLS] token)
+        over the images in the dataloader
+        described in Section 4.5 `INSPECTING VISION TRANSFORMER` and Appendix D.8
     :param model:
     :param dataloader:
     :return: tuple (attn_map_pixel, images)
                 shape: [data_size, height, width], [data_size, num_channel, height, width]
     """
+    assert model.pool == 'cls', 'only model with `cls` pooling method can generate attention map'
+
     if torch.cuda.is_available():
         model = model.cuda()
 
@@ -215,14 +235,14 @@ def get_attention_maps(model: ViTClassifier, dataloader: DataLoader) -> Tuple[to
 
     # let transformer process images
     images = []
-    for image, _ in dataloader:
-        if torch.cuda.is_available():
-            image = wrap_data(image)
+    with torch.no_grad():
+        for image, _ in dataloader:
+            if torch.cuda.is_available():
+                image = wrap_data(image)
 
-        with torch.no_grad():
             model.transformer_encoder(image)
+            images.append(image)
 
-        images.append(image)
     images = torch.cat(images, dim=0)  # [data_size, num_channel, height, width]
 
     # retrieve the cached attention map
@@ -236,12 +256,16 @@ def get_attention_maps(model: ViTClassifier, dataloader: DataLoader) -> Tuple[to
             module.clear_cache()
 
     rollout = attn_rollout(attn_maps)  # [data_size, num_patch, num_patch]
-    # get attention map for [cls] to each input patch token, and repeat patch tensor to pixel
-    # [data_size, height, width]
+    # get attention for [cls] to each input patch token
+    # [data_size, num_patch - 1]
+    attn_query_by_cls = rollout[:, 0, 1:] / torch.sum(rollout[:, 0, 1:], dim=1, keepdim=True)
+
     _, _, height, width = images.shape
     ph, pw = model.transformer_encoder.patch_height, model.transformer_encoder.patch_width
     nh, nw = height // ph, width // pw
-    attn_map_pixel = einops.repeat(rollout[:, 0, 1:],
+    # repeat patch tensor to pixel
+    # [data_size, height, width]
+    attn_map_pixel = einops.repeat(attn_query_by_cls,
                                    'b (nh nw) -> b (nh ph) (nw pw)',
                                    nh=nh, nw=nw,
                                    ph=ph, pw=pw)
@@ -258,7 +282,8 @@ def attn_rollout(attn_matrices: List[torch.Tensor]):
     :return: shape: [batch_size, num_token, num_token]
     """
     b, n, _ = attn_matrices[0].shape
-    rollout = einops.repeat(torch.eye(n), 'n m -> b n m', b=b)
-    for attn in map(lambda x: 0.5 * x + 0.5 * torch.eye(n), attn_matrices):
+    device = attn_matrices[0].device
+    rollout = einops.repeat(torch.eye(n, device=device), 'n m -> b n m', b=b)
+    for attn in map(lambda x: 0.5 * x + 0.5 * torch.eye(n, device=device), attn_matrices):
         rollout = torch.einsum('bij, bjk -> bik', rollout, attn)
     return rollout
