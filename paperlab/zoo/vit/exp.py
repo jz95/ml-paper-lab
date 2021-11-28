@@ -1,6 +1,7 @@
 import torch
 import einops
 from torch.utils.data import DataLoader, Dataset
+from collections import defaultdict
 from copy import deepcopy
 from typing import List, Dict, Tuple
 
@@ -30,6 +31,7 @@ sample_params = {
     'learning.num_epoch': 4,
     'learning.early_stop_patience': 5,
     
+    'display_freq': 2500,
     'valdate_freq': 10000
 }
 
@@ -56,7 +58,7 @@ def train(config):
     """
     train a Vision Transformer Image Classifier
     :param config:
-    :return: the trained ViT Model
+    :return: the trained ViT Model, training log
     """
     model = ViTClassifier(
         num_class=config.num_class,
@@ -80,11 +82,11 @@ def train(config):
         model = model.cuda()
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=config.learning.lr)
-#     scheduler = torch.optim.lr_scheduler.LinearLR(optimizer=optimizer,
-#                                                   start_factor=1.,
-#                                                   end_factor=0.1,
-#                                                   total_iters=config.learning.num_epoch
-#                                                   )
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                step_size=config.learning.num_epoch / 5,
+                                                gamma=0.5,
+                                                verbose=True,
+                                                )
 
     train_dataset, dev_dataset = get_data(config.use_dataset)
     train_dataloader = DataLoader(train_dataset,
@@ -100,10 +102,10 @@ def train(config):
     moving_avg_loss = 0
     best_dev_loss, best_dev_score, best_model_state = float('inf'), float('-inf'), deepcopy(model.state_dict())
     patience_cnt = 0
+    stats = defaultdict(dict)
 
     for _ in range(config.learning.num_epoch):
         for data in train_dataloader:
-            print(data[0].shape, data[1].shape, data[0][0])
             data = wrap_data(data) if torch.cuda.is_available() else data
 
             step += 1
@@ -117,12 +119,15 @@ def train(config):
             else:
                 moving_avg_loss = (1 - MOVING_DECAY) * loss.detach().data.item() + MOVING_DECAY * moving_avg_loss
 
-            if step % 1000 == 0:
-                print(f"step-{step} training_loss: {moving_avg_loss:.4f}")
+            if step % config.display_freq == 0:
+                print(f"step-{step}: training_loss: {moving_avg_loss:.4f}")
+                stats['training_loss'][step] = moving_avg_loss
             
             if step % config.validate_freq == 0:
                 dev_loss = evaluate_loss(model, dev_dataloader)
                 dev_score = evaluate_accuracy(model, dev_dataloader)
+
+                stats['dev_loss'][step], stats['dev_acc'][step] = dev_loss, dev_score
 
                 print(f"step-{step}: dev_loss: {dev_loss:.4f}, dev_acc: {dev_score:.4f}")
                 if dev_score > best_dev_score + EPS:
@@ -136,12 +141,13 @@ def train(config):
                     patience_cnt += 1
 
                 if patience_cnt >= config.learning.early_stop_patience:
-                    print(f"dev_loss doesnt descent in {config.learning.early_stop_patience} epochs, halt the training process.")
+                    print(f"dev_loss doesnt descent in {config.learning.early_stop_patience} times validation, halt the training process.")
                     model.load_state_dict(best_model_state)
-                    return model
-    
+                    return model, stats
+        
+        scheduler.step()
     model.load_state_dict(best_model_state)
-    return model
+    return model, stats
 
 
 def get_attention_distance(model: ViTClassifier, dataloader: DataLoader) -> torch.Tensor:

@@ -13,7 +13,10 @@ def get_tiny_imagenet(type_='train'):
         ext_name = filename.split('.')[-1]
         return ext_name.lower() == 'jpeg'
     
-    transform = Compose([RandAugment(), ToTensor()]) if type_ == 'train' else ToTensor()
+    if type_ == 'train':
+        transform = Compose([Resize(256), AutoAugment(AutoAugmentPolicy.IMAGENET), Resize(64), ToTensor()])
+    else:
+        transform = ToTensor()
     return torchvision.datasets.ImageFolder(root=os.path.join(root, '.cache/data', 'tiny-imagenet-200', type_),
                                             transform=transform,
                                             is_valid_file=is_jpeg)
